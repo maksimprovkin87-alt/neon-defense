@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>NEON DEFENSE</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#07101d;color:#e9f7ff;font-family:Arial,sans-serif;overflow:hidden}
+#app{height:100dvh;display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% 30%,#152b43,#050b14 75%)}
+header{height:58px;display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#091522;border-bottom:1px solid #24435a}
+.logo{font-weight:900;letter-spacing:2px;color:#56e8ff}.stats{font-size:12px;color:#b6d5e6}
+#scene{flex:1;min-height:0;position:relative}canvas{width:100%;height:100%;display:block}
+#hud{padding:10px 12px 16px;background:#091522;border-top:1px solid #24435a}
+.row{display:flex;gap:7px;justify-content:space-between;align-items:center}.btn{border:1px solid #2d7188;background:linear-gradient(#17465c,#0b2639);color:#e8fbff;border-radius:10px;padding:10px 8px;font-weight:bold;font-size:12px;flex:1}
+.btn:active{transform:scale(.97);background:#1c657a}.small{font-size:10px;color:#8fb4c7;margin-top:7px;text-align:center}
+.overlay{position:absolute;inset:0;background:#030914eF;display:flex;align-items:center;justify-content:center;padding:22px;z-index:3}
+.panel{width:min(420px,100%);border:1px solid #2d7188;background:linear-gradient(145deg,#132b40,#07121f);border-radius:18px;padding:20px;box-shadow:0 0 35px #0c8ca333}
+h1{margin:0 0 8px;color:#63eaff;letter-spacing:3px;font-size:25px}h2{margin:0 0 12px;font-size:19px}.muted{color:#9bb8c9;font-size:13px;line-height:1.45}
+.planet{display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid #24475c;border-radius:10px;margin:7px 0;background:#0a1a29}.planet b{font-size:13px}.planet span{font-size:11px;color:#93b4c6}
+.planet:active{border-color:#64eaff;background:#12364b}.panel{max-height:94%;overflow:auto}.panel .btn{margin-top:7px}
+</style></head><body><div id="app">
+<header><div class="logo">NEON DEFENSE</div><div class="stats" id="topstats">СЕКТОР 01 · НОВА-7</div></header>
+<div id="scene"><canvas id="game"></canvas><div class="overlay" id="menu"><div class="panel"><h1>NEON DEFENSE</h1><p class="muted">Последний рубеж человечества. Защити энергетическое ядро от инопланетного вторжения.</p><button class="btn" onclick="showCampaign()">КАМПАНИЯ</button><button class="btn" onclick="showPlanets()">ВЫБРАТЬ СЕКТОР</button><button class="btn" onclick="showTech()">ДЕРЕВО ТЕХНОЛОГИЙ</button><button class="btn" onclick="startGame()">БЫСТРЫЙ БОЙ</button><p class="small">TACTICAL COMBAT · BUILD 1.0</p></div></div>
+<div class="overlay" id="planetmenu" style="display:none"><div class="panel"><h2>ВЫБОР ПЛАНЕТЫ</h2><div id="planetlist"></div><button class="btn" onclick="hidePlanets()">НАЗАД</button></div></div>
+<div class="overlay" id="campaignmenu" style="display:none"><div class="panel"><h2>КАРТА КАМПАНИИ</h2><p class="muted" id="campaigninfo"></p><div id="missionlist" style="max-height:42vh;overflow:auto"></div><p class="muted">Сложность:</p><div class="row"><button class="btn" onclick="setDifficulty('easy')">ЛЁГКАЯ</button><button class="btn" onclick="setDifficulty('normal')">НОРМА</button><button class="btn" onclick="setDifficulty('hard')">ТЯЖЁЛАЯ</button></div><button class="btn" onclick="hideCampaign()">НАЗАД</button></div></div>
+<div class="overlay" id="techmenu" style="display:none"><div class="panel"><h2>ДЕРЕВО ТЕХНОЛОГИЙ</h2><p class="muted" id="techpoints"></p><div id="techlist"></div><button class="btn" onclick="hideTech()">НАЗАД</button></div></div>
+<div class="overlay" id="resultmenu" style="display:none"><div class="panel"><h2 id="resulttitle">МИССИЯ ЗАВЕРШЕНА</h2><p class="muted" id="resulttext"></p><button class="btn" onclick="closeResult()">ПРОДОЛЖИТЬ</button></div></div>
+</div>
+<div id="hud"><div class="row"><button class="btn" onclick="selectTower('laser')">ЛАЗЕР<br>💠 50</button><button class="btn" onclick="selectTower('cannon')">ПУШКА<br>⚙ 75</button><button class="btn" onclick="selectTower('cryo')">КРИО<br>❄ 65</button><button class="btn" onclick="sendWave()">ВОЛНА ▶</button></div><div class="small" id="hint">Выбери башню, затем коснись свободной площадки на карте</div></div>
+</div>
+<script>
+const cv=document.getElementById('game'),ctx=cv.getContext('2d');
+const planets=[
+{name:'НОВА-7',desc:'Лунная колония',base:'#24394b',road:'#8aa7b8',glow:'#4deaff',boss:'ТИТАН-НУЛЬ'},
+{name:'АРКТУРИЯ',desc:'Ледяные пустоши',base:'#183b4a',road:'#a9e8ef',glow:'#9af7ff',boss:'КРИО-ЛЕВИАФАН'},
+{name:'ВУЛКАНИС',desc:'Огненная планета',base:'#48251f',road:'#c17b54',glow:'#ff754d',boss:'МАГМА-КОЛОСС'},
+{name:'ЭКЗОРА',desc:'Биомеханический лес',base:'#1b3c31',road:'#8bbd72',glow:'#a3ff85',boss:'УЛЕЙ-МАТРИАРХ'},
+{name:'ОБЛИВИОН',desc:'Чёрная цитадель',base:'#28253d',road:'#9383b9',glow:'#c6a1ff',boss:'АРХОНТ БЕЗДНЫ'}
+];
+let sector=0,wave=0,money=180,hp=20,selected='laser',towers=[],enemies=[],shots=[],running=false,spawn=0,last=0,frame=0;
+let path=[],W=0,H=0,particles=[],audioOn=true,ctxAudio=null;
+let campaign={unlocked:1,completed:[],credits:0,techPoints:0,tech:{damage:0,range:0,core:0},difficulty:'normal',mission:0};
+let spawnedThisWave=0,waveQuota=0,missionMode=false,missionTarget=5;
+function resize(){let r=cv.getBoundingClientRect(),d=devicePixelRatio||1;W=r.width;H=r.height;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);makePath()}
+function makePath(){let x=W,y=H;let variants=[
+[[0,.22],[.28,.22],[.28,.48],[.68,.48],[.68,.75],[1,.75]],
+[[0,.72],[.25,.72],[.25,.3],[.58,.3],[.58,.62],[1,.62]],
+[[0,.25],[.4,.25],[.4,.7],[.72,.7],[.72,.42],[1,.42]],
+[[0,.6],[.22,.6],[.22,.25],[.78,.25],[.78,.75],[1,.75]],
+[[0,.45],[.32,.45],[.32,.2],[.66,.2],[.66,.7],[1,.7]]
+];path=variants[sector].map(p=>({x:p[0]*W,y:p[1]*H*.9+H*.05}))}
+
+function glow(x,y,r,color,alpha=.35){ctx.save();ctx.globalAlpha=alpha;ctx.shadowBlur=r;ctx.shadowColor=color;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,Math.max(1,r*.22),0,Math.PI*2);ctx.fill();ctx.restore()}
+function drawTower(t,time){
+ const col=t.type==='laser'?'#4deaff':t.type==='cryo'?'#a8f4ff':'#ffb46b';
+ ctx.save();ctx.translate(t.x,t.y);
+ // cast shadow and armored circular platform
+ ctx.fillStyle='#030a12';ctx.beginPath();ctx.ellipse(2,8,19,10,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#172b3b';ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.beginPath();ctx.arc(0,0,15,0,Math.PI*2);ctx.fill();ctx.stroke();
+ ctx.strokeStyle='#7193a7';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,10,0,Math.PI*2);ctx.stroke();
+ ctx.rotate(Math.sin(time/650+t.x)*.08);
+ if(t.type==='laser'){
+   ctx.fillStyle='#244e61';ctx.fillRect(-5,-13,10,20);ctx.fillStyle='#c4faff';ctx.fillRect(-2,-17,4,13);
+   ctx.fillStyle=col;ctx.fillRect(-7,-17,14,3);glow(0,-16,15,col,.55);
+ }else if(t.type==='cannon'){
+   ctx.fillStyle='#5a4938';ctx.fillRect(-7,-8,14,14);ctx.fillStyle='#ffbf7c';ctx.fillRect(-3,-20,6,18);ctx.fillStyle='#d9e6ec';ctx.fillRect(-5,-21,10,4);
+ }else{
+   ctx.fillStyle='#31576b';ctx.beginPath();ctx.moveTo(0,-18);ctx.lineTo(10,-4);ctx.lineTo(0,8);ctx.lineTo(-10,-4);ctx.closePath();ctx.fill();ctx.strokeStyle=col;ctx.stroke();
+   ctx.fillStyle='#d8ffff';ctx.beginPath();ctx.arc(0,-5,4+Math.sin(time/100)*1.2,0,Math.PI*2);ctx.fill();glow(0,-5,18,col,.4);
+ }
+ ctx.restore();
+}
+function drawAlien(e,time){
+ const boss=e.boss,scale=boss?1.55:1,phase=Math.sin(time/105+e.x*.04);
+ const col=boss?'#ff557d':'#d85d83',light=boss?'#ffc1d0':'#ffabc1';
+ ctx.save();ctx.translate(e.x,e.y);ctx.scale(scale,scale);
+ // animated legs and arms
+ ctx.strokeStyle='#7d294e';ctx.lineWidth=boss?4:2.5;ctx.lineCap='round';
+ for(let side of [-1,1]){
+   ctx.beginPath();ctx.moveTo(side*3,4);ctx.lineTo(side*(7+phase*2),12);ctx.lineTo(side*(10-phase*2),16);ctx.stroke();
+   ctx.beginPath();ctx.moveTo(side*5,-3);ctx.lineTo(side*(11-phase*2),2);ctx.lineTo(side*13,-3+phase*2);ctx.stroke();
+ }
+ ctx.fillStyle=col;ctx.beginPath();ctx.ellipse(0,0,7,9,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=light;ctx.beginPath();ctx.ellipse(0,-7,6,5,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#180d1b';ctx.beginPath();ctx.ellipse(-2,-7,1.5,2,0,0,Math.PI*2);ctx.ellipse(2,-7,1.5,2,0,0,Math.PI*2);ctx.fill();
+ if(boss){ctx.strokeStyle='#ffb1c8';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-4,-11);ctx.lineTo(-8,-17+phase);ctx.moveTo(4,-11);ctx.lineTo(8,-17-phase);ctx.stroke()}
+ ctx.restore();
+ // health bar
+ const bw=boss?35:22;ctx.fillStyle='#160d1a';ctx.fillRect(e.x-bw/2,e.y-(boss?25:18),bw,4);
+ ctx.fillStyle=boss?'#ff5379':'#ff829e';ctx.fillRect(e.x-bw/2,e.y-(boss?25:18),bw*Math.max(0,e.hp/e.max),4);
+}
+function draw(){
+ const p=planets[sector],time=performance.now();
+ let bg=ctx.createLinearGradient(0,0,W,H);bg.addColorStop(0,p.base);bg.addColorStop(1,'#07101b');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+ // planetary terrain texture and glowing mineral points
+ for(let i=0;i<95;i++){let x=(i*83%W),y=(i*137%H);ctx.fillStyle=i%4===0?p.glow+'30':'#ffffff0b';ctx.beginPath();ctx.arc(x,y,(i%5)+.5,0,Math.PI*2);ctx.fill()}
+ ctx.strokeStyle=p.glow+'12';ctx.lineWidth=1;
+ for(let x=0;x<W;x+=38){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+ for(let y=0;y<H;y+=38){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+ // route bevel + illuminated centerline
+ ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#030912';ctx.lineWidth=38;ctx.beginPath();path.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y));ctx.stroke();
+ ctx.strokeStyle=p.road;ctx.globalAlpha=.58;ctx.lineWidth=27;ctx.stroke();ctx.globalAlpha=1;
+ ctx.strokeStyle=p.glow;ctx.globalAlpha=.45;ctx.lineWidth=2.5;ctx.setLineDash([9,8]);ctx.lineDashOffset=-time/65;ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+ path.forEach((q,i)=>{ctx.fillStyle='#07121d';ctx.beginPath();ctx.arc(q.x,q.y,8,0,Math.PI*2);ctx.fill();ctx.strokeStyle=p.glow;ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#d7fbff';ctx.beginPath();ctx.arc(q.x,q.y,2.5,0,Math.PI*2);ctx.fill()});
+ // distant energy core at route end
+ let end=path[path.length-1];glow(end.x,end.y,30,p.glow,.18);
+ towers.forEach(t=>drawTower(t,time));
+ enemies.forEach(e=>drawAlien(e,time));
+ // energy bolts with bloom
+ shots.forEach(s=>{ctx.save();ctx.globalAlpha=Math.min(1,s.life/.12);ctx.strokeStyle=s.color;ctx.shadowColor=s.color;ctx.shadowBlur=13;ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(s.tx,s.ty);ctx.stroke();ctx.restore()});
+ particles.forEach(a=>{ctx.globalAlpha=Math.max(0,a.life/a.max);ctx.fillStyle=a.color;ctx.shadowColor=a.color;ctx.shadowBlur=8;ctx.beginPath();ctx.arc(a.x,a.y,a.r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.globalAlpha=1});
+ // compact tactical HUD on canvas
+ ctx.fillStyle='#06111ddd';ctx.fillRect(7,7,Math.min(W-14,235),25);ctx.strokeStyle=p.glow+'88';ctx.strokeRect(7,7,Math.min(W-14,235),25);
+ ctx.fillStyle='#eafaff';ctx.font='bold 11px Arial';ctx.fillText(`WAVE ${wave}   ⚡ ${money}   CORE ${hp}`,14,24);
+}
+
+function tick(ts){let dt=Math.min((ts-last)/1000||0,.04);last=ts;frame++;
+if(running){spawn-=dt;if(spawn<=0&&spawnedThisWave<waveQuota){let boss=wave%5===0&&spawnedThisWave===0;let diff=campaign.difficulty==='easy'?.8:campaign.difficulty==='hard'?1.45:1;let base=boss?16:3;enemies.push({x:path[0].x,y:path[0].y,seg:0,progress:0,hp:Math.ceil(base*diff),max:Math.ceil(base*diff),boss,speed:(boss?23:35)*diff});spawnedThisWave++;spawn=boss?2:1.1}
+enemies.forEach(e=>{let a=path[e.seg],b=path[Math.min(e.seg+1,path.length-1)];if(!b)return;let dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1;e.progress+=e.speed*dt/len;e.x=a.x+dx*e.progress;e.y=a.y+dy*e.progress;if(e.progress>=1){e.seg++;e.progress=0;if(e.seg>=path.length-1){e.hp=0;hp--;}}});
+towers.forEach(t=>{t.cool=(t.cool||0)-dt;if(t.cool<=0){let target=enemies.find(e=>Math.hypot(e.x-t.x,e.y-t.y)<(125*(1+campaign.tech.range*.1)));if(target){target.hp-=(t.type==='cannon'?2:1)*(1+campaign.tech.damage*.15);if(t.type==='cryo')target.speed=18;shots.push({x:t.x,y:t.y,tx:target.x,ty:target.y,color:t.type==='cryo'?'#aaf7ff':t.type==='cannon'?'#ffb46b':'#4deaff',life:.12});t.cool=t.type==='laser'?.35:.8}}});
+enemies=enemies.filter(e=>{if(e.hp<=0){money+=e.boss?120:12;burst(e.x,e.y,e.boss?20:8,e.boss?'#ff638a':'#78eaff');sound(e.boss?95:260,.07);return false}return true});shots.forEach(s=>s.life-=dt);shots=shots.filter(s=>s.life>0);particles.forEach(a=>{a.x+=a.vx*dt;a.y+=a.vy*dt;a.life-=dt});particles=particles.filter(a=>a.life>0);if(frame%30===0)saveGame();
+if(hp<=0){running=false;document.getElementById('hint').textContent='ЯДРО УНИЧТОЖЕНО — открой кампанию и попробуй снова';}
+if(running&&spawnedThisWave>=waveQuota&&enemies.length===0){running=false;if(missionMode&&wave>=missionTarget)completeMission();else document.getElementById('hint').textContent='ВОЛНА ОТБИТА. Нажми «ВОЛНА», чтобы начать следующую.';}
+}
+draw();requestAnimationFrame(tick)}
+
+function burst(x,y,n,color){for(let i=0;i<n;i++){let a=Math.random()*Math.PI*2,v=20+Math.random()*100;particles.push({x:x,y:y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:.3,max:.6,r:1+Math.random()*3,color:color})}}
+function sound(freq,duration){if(!audioOn)return;try{ctxAudio=ctxAudio||new (window.AudioContext||window.webkitAudioContext)();let o=ctxAudio.createOscillator(),g=ctxAudio.createGain();o.frequency.value=freq;o.type='sawtooth';g.gain.setValueAtTime(.02,ctxAudio.currentTime);g.gain.exponentialRampToValueAtTime(.001,ctxAudio.currentTime+duration);o.connect(g);g.connect(ctxAudio.destination);o.start();o.stop(ctxAudio.currentTime+duration)}catch(e){}}
+function saveGame(){try{localStorage.setItem('neon-defense-save',JSON.stringify({sector:sector,wave:wave,money:money,hp:hp,towers:towers,campaign:campaign}))}catch(e){}}
+function loadGame(){try{let s=JSON.parse(localStorage.getItem('neon-defense-save')||'null');if(s){sector=Math.max(0,Math.min(4,s.sector||0));wave=s.wave||0;money=s.money||180;hp=s.hp||20;towers=Array.isArray(s.towers)?s.towers:[];if(s.campaign)campaign=Object.assign(campaign,s.campaign);document.getElementById('topstats').textContent='СЕКТОР 0'+(sector+1)+' · '+planets[sector].name}}catch(e){}}
+
+function selectTower(t){selected=t;document.getElementById('hint').textContent='Выбрана башня: '+t+'. Коснись свободного места вне дороги.'}
+function place(x,y){if(!running)return;let cost={laser:50,cannon:75,cryo:65}[selected];if(money<cost){document.getElementById('hint').textContent='Недостаточно энергии';return}if(path.some((p,i)=>i<path.length-1&&distToSeg(x,y,p,path[i+1])<25))return;if(towers.some(t=>Math.hypot(t.x-x,t.y-y)<30))return;towers.push({x,y,type:selected,cool:0});money-=cost}
+function distToSeg(px,py,a,b){let dx=b.x-a.x,dy=b.y-a.y,t=Math.max(0,Math.min(1,((px-a.x)*dx+(py-a.y)*dy)/(dx*dx+dy*dy||1)));return Math.hypot(px-a.x-t*dx,py-a.y-t*dy)}
+cv.addEventListener('pointerdown',e=>{let r=cv.getBoundingClientRect();place(e.clientX-r.left,e.clientY-r.top)});
+function sendWave(){if(!running){if(hp<=0){hp=20;money=180;wave=0;towers=[];enemies=[];spawnedThisWave=0;}wave++;running=true;spawn=.1;spawnedThisWave=0;waveQuota=Math.min(4+wave,14);if(wave%5===0)waveQuota=Math.max(1,waveQuota-1);saveGame();}}
+function showPlanets(){document.getElementById('menu').style.display='none';document.getElementById('planetmenu').style.display='flex';document.getElementById('planetlist').innerHTML=planets.map((p,i)=>`<div class="planet" onclick="choosePlanet(${i})"><b>${p.name}</b><span>${p.desc}</span></div>`).join('')}
+function choosePlanet(i){missionMode=false;sector=i;wave=0;money=180;hp=20;towers=[];enemies=[];running=false;resize();document.getElementById('topstats').textContent=`СЕКТОР 0${i+1} · ${planets[i].name}`;hidePlanets();document.getElementById('hint').textContent=`${planets[i].desc}. Босс сектора: ${planets[i].boss}`}
+function hidePlanets(){document.getElementById('planetmenu').style.display='none';document.getElementById('menu').style.display='flex'}
+function startGame(){missionMode=false;document.getElementById('menu').style.display='none';running=false;if(wave===0)wave=0;document.getElementById('hint').textContent='Быстрый бой: нажми «ВОЛНА», чтобы начать.'}
+
+function saveCampaign(){saveGame()}
+function showCampaign(){document.getElementById('menu').style.display='none';document.getElementById('campaignmenu').style.display='flex';renderCampaign()}
+function hideCampaign(){document.getElementById('campaignmenu').style.display='none';document.getElementById('menu').style.display='flex'}
+function setDifficulty(d){campaign.difficulty=d;renderCampaign();saveCampaign()}
+function renderCampaign(){
+ document.getElementById('campaigninfo').textContent=`Открыто миссий: ${campaign.unlocked}/25 · Завершено: ${campaign.completed.length} · Ресурсы: ${campaign.credits} CR`;
+ document.getElementById('missionlist').innerHTML=Array.from({length:25},(_,i)=>{let open=i<campaign.unlocked,done=campaign.completed.includes(i),sec=Math.floor(i/5);return `<div class="planet" style="opacity:${open?1:.4}" onclick="${open?`launchMission(${i})`:''}"><b>${done?'✓ ':open?'▶ ':'🔒 '}${i+1}. ${planets[sec].name}</b><span>${['Разведка','Прорыв','Осада','Контрудар','Командир'][i%5]} · ${done?'ПРОЙДЕНО':open?'ДОСТУПНО':'ЗАКРЫТО'}</span></div>`}).join('');
+}
+function launchMission(i){if(i>=campaign.unlocked)return;campaign.mission=i;missionMode=true;sector=Math.floor(i/5);wave=0;money=180+campaign.credits;hp=20+campaign.tech.core*2;towers=[];enemies=[];shots=[];running=false;spawnedThisWave=0;resize();document.getElementById('topstats').textContent=`МИССИЯ ${i+1}/25 · ${planets[sector].name}`;document.getElementById('campaignmenu').style.display='none';document.getElementById('menu').style.display='none';document.getElementById('hint').textContent=`Цель: отбить 5 волн. Сложность: ${campaign.difficulty.toUpperCase()}`;saveCampaign()}
+function completeMission(){let i=campaign.mission;if(!campaign.completed.includes(i)){campaign.completed.push(i);let reward=120+(campaign.difficulty==='hard'?100:campaign.difficulty==='easy'?50:0);campaign.credits+=reward;campaign.techPoints+=1;if(i+2>campaign.unlocked)campaign.unlocked=Math.min(25,i+2);document.getElementById('resulttext').textContent=`Сектор очищен. Награда: ${reward} CR и 1 очко исследований. Следующая миссия ${Math.min(25,i+2)} открыта.`;}else document.getElementById('resulttext').textContent='Миссия пройдена повторно.';document.getElementById('resulttitle').textContent='МИССИЯ ЗАВЕРШЕНА';document.getElementById('resultmenu').style.display='flex';saveCampaign()}
+function closeResult(){document.getElementById('resultmenu').style.display='none';showCampaign()}
+function showTech(){document.getElementById('menu').style.display='none';document.getElementById('techmenu').style.display='flex';renderTech()}
+function hideTech(){document.getElementById('techmenu').style.display='none';document.getElementById('menu').style.display='flex'}
+function renderTech(){document.getElementById('techpoints').textContent=`Очки исследований: ${campaign.techPoints} · Улучшения действуют во всех миссиях`;let items=[['damage','Усиленные излучатели','+15% урона башен'],['range','Тактический сканер','+10% дальности (следующий этап)'],['core','Броня ядра','+2 единицы прочности за уровень']];document.getElementById('techlist').innerHTML=items.map(([k,n,d])=>`<div class="planet"><div><b>${n}</b><br><span>${d} · Уровень ${campaign.tech[k]}</span></div><button class="btn" style="flex:0 0 76px" onclick="buyTech('${k}')">1 ОЧКО</button></div>`).join('')}
+function buyTech(k){if(campaign.techPoints<1)return;campaign.techPoints--;campaign.tech[k]++;renderTech();saveCampaign()}
+
+window.addEventListener('resize',resize);window.addEventListener('pagehide',saveGame);loadGame();resize();requestAnimationFrame(tick);
+</script></body></html>

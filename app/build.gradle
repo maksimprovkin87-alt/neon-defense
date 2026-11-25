@@ -1,0 +1,16 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.neondefense.game'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.neondefense.game'
+        minSdk 23
+        targetSdk 35
+        versionCode 10
+        versionName '1.0'
+    }
+}
